@@ -1,5 +1,5 @@
 {
-  "name": "Vinhomes Green Paradise Cần Giờ",
-  "description": "Trang landing page sang trọng giới thiệu dự án đại đô thị lấn biển Vinhomes Green Paradise Cần Giờ.",
+  "name": "Hệ thống Đồng bộ Đăng ký Google Sheet",
+  "description": "Ứng dụng đăng ký thông tin khách hàng và đồng bộ tự động với Google Sheet qua Apps Script.",
   "requestFramePermissions": []
 }

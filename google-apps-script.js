@@ -23,7 +23,7 @@ function doPost(e) {
     // Nếu trang tính chưa tồn tại, tạo mới và thêm tiêu đề
     if (!sheet) {
       sheet = ss.insertSheet(sheetName);
-      sheet.appendRow(['Thời gian đăng ký', 'Họ và tên', 'Số điện thoại', 'Sản phẩm quan tâm']);
+      sheet.appendRow(['Thời gian đăng ký', 'Họ và tên', 'Số điện thoại', 'Email', 'Sản phẩm quan tâm', 'Mã giao dịch']);
     }
     
     var timestamp = new Date();
@@ -31,7 +31,9 @@ function doPost(e) {
       timestamp,
       data.name,
       data.phone,
-      data.product
+      data.email,
+      data.product,
+      data.transactionCode
     ];
     
     sheet.appendRow(rowData);

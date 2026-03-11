@@ -38,7 +38,7 @@ const NAV_LINKS = [
   { name: "Vị trí", href: "#location" },
   { name: "Tiện ích", href: "#amenities" },
   { name: "Sản phẩm", href: "#products" },
-  { name: "Liên hệ", href: "#contact" }
+  { name: "Đăng ký", href: "#contact" }
 ];
 
 const AMENITIES = [
@@ -375,40 +375,91 @@ const Contact = () => {
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
+    email: '',
     product: 'Biệt thự đơn lập'
   });
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [showQR, setShowQR] = useState(false);
+  const [transactionCode, setTransactionCode] = useState('');
+  const [paymentStatus, setPaymentStatus] = useState<'UNPAID' | 'PAID' | 'MANUAL'>('UNPAID');
+  const [timer, setTimer] = useState(0);
+  const [showManualButton, setShowManualButton] = useState(false);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    let timerInterval: NodeJS.Timeout;
+
+    if (showQR && paymentStatus === 'UNPAID') {
+      // Start 1 minute timer
+      timerInterval = setInterval(() => {
+        setTimer((prev) => {
+          if (prev >= 60) {
+            setShowManualButton(true);
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+
+      // Poll every 5 seconds
+      interval = setInterval(async () => {
+        try {
+          const response = await fetch(`/api/check-status/${transactionCode}`);
+          const data = await response.json();
+          if (data.status === 'PAID') {
+            setPaymentStatus('PAID');
+            clearInterval(interval);
+            clearInterval(timerInterval);
+          }
+        } catch (error) {
+          console.error('Error checking status:', error);
+        }
+      }, 5000);
+    }
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(timerInterval);
+    };
+  }, [showQR, transactionCode, paymentStatus]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus('loading');
-
-    const scriptUrl = import.meta.env.VITE_GOOGLE_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbzSGMIZLCckW8spVru56sUF8Q-lnK8TRTzQGckzORe2S1Ttxk7O36lJlkar-bW6tFaGBQ/exec';
+    setTimer(0);
+    setShowManualButton(false);
+    setPaymentStatus('UNPAID');
 
     try {
-      // Sử dụng mode: 'no-cors' nếu gặp vấn đề về CORS với Google Script
-      // Tuy nhiên, 'no-cors' sẽ không cho phép đọc phản hồi JSON.
-      // Google Apps Script Web App hỗ trợ CORS nếu được cấu hình đúng.
-      const response = await fetch(scriptUrl, {
+      const response = await fetch('/api/register', {
         method: 'POST',
-        mode: 'no-cors', // Thường dùng cho Google Apps Script để tránh lỗi CORS phức tạp
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(formData),
       });
 
-      // Với no-cors, chúng ta không thể kiểm tra response.ok
-      // Giả định thành công nếu không có lỗi ném ra
-      setStatus('success');
-      setFormData({ name: '', phone: '', product: 'Biệt thự đơn lập' });
-      
-      setTimeout(() => setStatus('idle'), 5000);
+      const result = await response.json();
+
+      if (result.success) {
+        setTransactionCode(result.data.paymentCode);
+        setStatus('success');
+        setShowQR(true);
+      } else {
+        throw new Error(result.message);
+      }
     } catch (error) {
       console.error('Lỗi gửi form:', error);
       setStatus('error');
     }
   };
+
+  const handleManualConfirm = () => {
+    setPaymentStatus('MANUAL');
+  };
+
+  const qrUrl = `https://qr.sepay.vn/img?bank=Sacombank&acc=060069105575&template=compact&amount=10000&des=${transactionCode}`;
+  const zaloGroupUrl = "https://zalo.me/g/qnucsm452";
 
   return (
     <section id="contact" className="py-24 bg-brand-dark text-white relative overflow-hidden">
@@ -420,6 +471,11 @@ const Contact = () => {
             <h2 className="text-4xl md:text-6xl mb-8">Bắt đầu hành trình <br /> <span className="italic text-brand-gold">Thịnh vượng</span></h2>
             <p className="text-white/60 mb-12 font-light leading-relaxed max-w-md">
               Để lại thông tin để nhận bảng giá chi tiết, chính sách bán hàng mới nhất và lời mời tham quan dự án trực tiếp.
+              <br /><br />
+              <span className="text-brand-gold font-medium italic">
+                * Sau khi đăng ký, bạn sẽ được mời vào nhóm Zalo riêng tư để được hỗ trợ 1:1 nhanh nhất. 
+                Hệ thống sẽ gửi email và tin nhắn Zalo xác thực ngay lập tức.
+              </span>
             </p>
             
             <div className="space-y-6">
@@ -453,7 +509,7 @@ const Contact = () => {
             </div>
           </div>
 
-          <div className="bg-white p-10 rounded-3xl shadow-2xl">
+          <div className="bg-white p-10 rounded-3xl shadow-2xl relative">
             <h3 className="text-2xl text-brand-dark mb-8 text-center">Đăng ký tư vấn</h3>
             <form className="space-y-6" onSubmit={handleSubmit}>
               <div>
@@ -479,6 +535,17 @@ const Contact = () => {
                 />
               </div>
               <div>
+                <label className="block text-[10px] uppercase tracking-widest text-brand-dark/40 mb-2">Email</label>
+                <input 
+                  type="email" 
+                  required
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="example@gmail.com"
+                  className="w-full bg-brand-cream/50 border-none rounded-xl px-6 py-4 text-brand-dark focus:ring-2 focus:ring-brand-gold outline-none transition-all"
+                />
+              </div>
+              <div>
                 <label className="block text-[10px] uppercase tracking-widest text-brand-dark/40 mb-2">Sản phẩm quan tâm</label>
                 <select 
                   value={formData.product}
@@ -498,11 +565,6 @@ const Contact = () => {
                 {status === 'loading' ? 'Đang gửi...' : 'Gửi yêu cầu ngay'}
               </button>
               
-              {status === 'success' && (
-                <p className="text-emerald-600 text-center text-sm font-medium">
-                  Đăng ký thành công! Chúng tôi sẽ liên hệ sớm nhất.
-                </p>
-              )}
               {status === 'error' && (
                 <p className="text-red-500 text-center text-sm font-medium">
                   Có lỗi xảy ra. Vui lòng thử lại sau hoặc gọi hotline.
@@ -510,9 +572,124 @@ const Contact = () => {
               )}
 
               <p className="text-[10px] text-center text-brand-dark/30 italic">
-                * Thông tin của quý khách được bảo mật tuyệt đối.
+                * Phí đăng ký tư vấn chuyên sâu: 10.000đ
               </p>
             </form>
+
+            {/* QR Code Modal Overlay */}
+            <AnimatePresence>
+              {showQR && (
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute inset-0 bg-white rounded-3xl z-20 flex flex-col items-center justify-center p-8 text-brand-dark"
+                >
+                  <button 
+                    onClick={() => {
+                      setShowQR(false);
+                      setStatus('idle');
+                      setFormData({ name: '', phone: '', email: '', product: 'Biệt thự đơn lập' });
+                    }}
+                    className="absolute top-6 right-6 p-2 hover:bg-brand-cream rounded-full transition-colors"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+
+                  {paymentStatus === 'UNPAID' ? (
+                    <>
+                      <div className="text-center mb-6">
+                        <h4 className="text-xl font-semibold mb-2">Thanh toán đăng ký</h4>
+                        <p className="text-sm text-brand-dark/60">Vui lòng quét mã QR để hoàn tất</p>
+                      </div>
+
+                      <div className="bg-brand-cream p-4 rounded-2xl mb-6 shadow-inner relative">
+                        <img 
+                          src={qrUrl} 
+                          alt="Payment QR Code" 
+                          className="w-64 h-64 object-contain rounded-lg"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-brand-dark text-white text-[8px] px-3 py-1 rounded-full animate-pulse">
+                          Đang chờ thanh toán...
+                        </div>
+                      </div>
+
+                      <div className="w-full space-y-3 text-sm mb-6">
+                        <div className="flex justify-between border-b border-brand-dark/10 pb-2">
+                          <span className="text-brand-dark/60">Số tiền:</span>
+                          <span className="font-bold text-brand-gold text-lg">10.000đ</span>
+                        </div>
+                        <div className="flex justify-between border-b border-brand-dark/10 pb-2">
+                          <span className="text-brand-dark/60">Nội dung:</span>
+                          <span className="font-mono font-bold">{transactionCode}</span>
+                        </div>
+                      </div>
+
+                      {showManualButton && (
+                        <button 
+                          onClick={handleManualConfirm}
+                          className="w-full py-3 border-2 border-brand-gold text-brand-gold rounded-xl text-xs uppercase tracking-widest font-bold hover:bg-brand-gold hover:text-white transition-all mb-4"
+                        >
+                          Xác nhận đã thanh toán
+                        </button>
+                      )}
+
+                      <p className="text-[10px] text-center text-brand-dark/40 italic">
+                        Hệ thống sẽ tự động xác nhận sau khi nhận được thanh toán.
+                      </p>
+                    </>
+                  ) : paymentStatus === 'PAID' ? (
+                    <motion.div 
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      className="text-center"
+                    >
+                      <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <ShieldCheck className="w-10 h-10" />
+                      </div>
+                      <h4 className="text-2xl font-serif mb-4">Chúc mừng bạn!</h4>
+                      <p className="text-brand-dark/70 mb-8 leading-relaxed">
+                        Thanh toán của bạn đã được xác nhận thành công. <br />
+                        Chào mừng bạn đến với cộng đồng cư dân tinh hoa.
+                      </p>
+                      <a 
+                        href={zaloGroupUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-2 bg-brand-dark text-white px-8 py-4 rounded-xl uppercase tracking-widest text-sm font-medium hover:bg-brand-gold transition-all shadow-lg"
+                      >
+                        Tham gia nhóm Zalo ngay <ArrowRight className="w-4 h-4" />
+                      </a>
+                    </motion.div>
+                  ) : (
+                    <motion.div 
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      className="text-center"
+                    >
+                      <div className="w-20 h-20 bg-brand-gold/10 text-brand-gold rounded-full flex items-center justify-center mx-auto mb-6">
+                        <Compass className="w-10 h-10" />
+                      </div>
+                      <h4 className="text-xl font-serif mb-4">Đã ghi nhận yêu cầu</h4>
+                      <p className="text-brand-dark/70 mb-8 leading-relaxed text-sm">
+                        Chúng tôi sẽ kiểm tra giao dịch của bạn thủ công và duyệt bạn vào nhóm sớm nhất có thể.
+                        <br /><br />
+                        Bạn vẫn có thể nhấn vào nút bên dưới để gửi yêu cầu tham gia nhóm trước.
+                      </p>
+                      <a 
+                        href={zaloGroupUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-2 border-2 border-brand-dark text-brand-dark px-8 py-4 rounded-xl uppercase tracking-widest text-sm font-medium hover:bg-brand-dark hover:text-white transition-all"
+                      >
+                        Vào nhóm Zalo <ArrowRight className="w-4 h-4" />
+                      </a>
+                    </motion.div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </div>
