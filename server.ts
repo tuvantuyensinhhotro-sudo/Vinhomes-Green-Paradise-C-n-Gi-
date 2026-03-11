@@ -14,7 +14,15 @@ async function startServer() {
   // API route to handle registration
   app.post("/api/register", async (req, res) => {
     try {
+      console.log("Received registration request:", req.body);
       const { name, phone, email, product } = req.body;
+
+      if (!name || !phone || !email) {
+        return res.status(400).json({
+          success: false,
+          message: "Vui lòng điền đầy đủ thông tin bắt buộc."
+        });
+      }
 
       // Generate a unique payment code (BDS + 6 random digits)
       const paymentCode = "BDS" + Math.floor(100000 + Math.random() * 900000);
@@ -30,26 +38,25 @@ async function startServer() {
 
       // Sync with Google Sheets if URL is provided
       const scriptUrl = process.env.GOOGLE_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbxPAzwJnA4q1qV0Nf9-p7KzHOcgOIaJ5eNSsZBPQI6tb09dOGZnI4H-EHXYIMD7AfIaUA/exec';
-      if (scriptUrl) {
-        try {
-          await axios.post(scriptUrl, registrationData);
-          console.log("Synced with Google Sheets successfully");
-        } catch (error) {
-          console.error("Failed to sync with Google Sheets:", error);
-          // We still return success to the user but log the error
-        }
-      }
+      
+      console.log("Syncing with Google Sheets at:", scriptUrl);
+      
+      // We don't await this to make the response faster, 
+      // but we handle errors internally
+      axios.post(scriptUrl, registrationData)
+        .then(() => console.log("Synced with Google Sheets successfully"))
+        .catch((err) => console.error("Failed to sync with Google Sheets:", err.message));
 
       res.json({
         success: true,
         message: "Đăng ký thành công!",
         data: registrationData
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Registration error:", error);
       res.status(500).json({
         success: false,
-        message: "Có lỗi xảy ra trong quá trình đăng ký."
+        message: "Có lỗi xảy ra trong quá trình đăng ký: " + (error.message || "Unknown error")
       });
     }
   });
