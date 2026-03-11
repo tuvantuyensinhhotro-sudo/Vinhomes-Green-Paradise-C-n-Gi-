@@ -19,6 +19,8 @@ import {
 
 // --- Constants & Data ---
 
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxPAzwJnA4q1qV0Nf9-p7KzHOcgOIaJ5eNSsZBPQI6tb09dOGZnI4H-EHXYIMD7AfIaUA/exec';
+
 const PROJECT_INFO = {
   name: "Vinhomes Green Paradise",
   location: "Cần Giờ, TP. Hồ Chí Minh",
@@ -404,9 +406,23 @@ const Contact = () => {
       // Poll every 5 seconds
       interval = setInterval(async () => {
         try {
-          const response = await fetch(`/api/check-status/${transactionCode}`);
-          const data = await response.json();
-          if (data.status === 'PAID') {
+          // Try calling the local API first, fallback to direct Google Script call
+          let status;
+          try {
+            const response = await fetch(`/api/check-status/${transactionCode}`);
+            if (response.ok) {
+              const data = await response.json();
+              status = data.status;
+            } else {
+              throw new Error('Local API failed');
+            }
+          } catch (e) {
+            // Fallback: Call Google Script directly (for static hosting like GitHub Pages)
+            const response = await fetch(`${GOOGLE_SCRIPT_URL}?paymentCode=${transactionCode}`);
+            status = await response.text();
+          }
+
+          if (status === 'PAID') {
             setPaymentStatus('PAID');
             clearInterval(interval);
             clearInterval(timerInterval);
@@ -431,25 +447,69 @@ const Contact = () => {
     setPaymentStatus('UNPAID');
 
     try {
-      const response = await fetch('/api/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-      });
+      // Generate a unique payment code (BDS + 6 random digits)
+      const paymentCode = "BDS" + Math.floor(100000 + Math.random() * 900000);
+      const registrationData = {
+        ...formData,
+        paymentCode,
+        status: "UNPAID"
+      };
 
-      const result = await response.json();
+      // Try calling the local API first, fallback to direct Google Script call
+      let success = false;
+      let message = '';
+      let data = registrationData;
 
-      if (result.success) {
-        setTransactionCode(result.data.paymentCode);
+      try {
+        const response = await fetch('/api/register', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(formData),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          success = result.success;
+          message = result.message;
+          data = result.data;
+        } else {
+          throw new Error('Local API failed');
+        }
+      } catch (e) {
+        // Fallback: Call Google Script directly (for static hosting like GitHub Pages)
+        try {
+          // Note: Google Script POST might have CORS issues if not handled by ContentService
+          // but usually it works if we use no-cors or if the script is configured correctly.
+          await fetch(GOOGLE_SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors', // Use no-cors to avoid preflight issues on static sites
+            headers: {
+              'Content-Type': 'text/plain', // Avoid preflight
+            },
+            body: JSON.stringify(registrationData),
+          });
+          
+          // Since no-cors doesn't let us see the response, we assume success if it doesn't throw
+          success = true;
+          message = "Đăng ký thành công!";
+          data = registrationData;
+        } catch (scriptError) {
+          console.error('Google Script direct call failed:', scriptError);
+          throw new Error("Không thể kết nối với máy chủ. Vui lòng thử lại sau.");
+        }
+      }
+
+      if (success) {
+        setTransactionCode(data.paymentCode);
         setStatus('success');
         setShowQR(true);
       } else {
-        throw new Error(result.message);
+        throw new Error(message || "Đăng ký không thành công.");
       }
-    } catch (error) {
-      console.error('Lỗi gửi form:', error);
+    } catch (error: any) {
+      console.error('Registration error:', error);
       setStatus('error');
     }
   };
